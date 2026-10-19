@@ -7,10 +7,9 @@ in `BepInEx/config/WorldMap/`; the multiplayer API sends compact coordinate upda
 Rendered map images stay local.
 
 The saved item is cloned from the game's book item and added at low weight to the household miscellaneous loot
-categories. It is searchable as `paper_worldmap` in the game's spawn/debug lists. Hold or equip the map, then press
-**M** to open and close it. Use **+ / −** to zoom, arrow controls to pan, and **Center** to return to your position.
-The item uses standard inventory and hand placement, with right-hand equip enabled. A map-specific hand model and use
-animation remain follow-up polish.
+categories. It is searchable as `paper_worldmap` in the game's spawn/debug lists. Its held page displays the live map.
+Hold or equip it, then press **M** for the larger map view. Use **+ / −** to zoom, arrow controls to pan, and **Center**
+to return to your position. The item uses standard inventory and hand placement, with right-hand equip enabled.
 
 Exploration is represented by sampled travel trails rather than surveyed terrain. Positions are sent at one metre
 resolution; live markers update once a second, and route samples are sent every 24 metres. The host queues late-join
