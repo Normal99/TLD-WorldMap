@@ -11,7 +11,7 @@ namespace WorldMap
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "tldrevamp.worldmap";
-        public const string Version = "0.1.2";
+        public const string Version = "0.2.0";
         internal static ModInfo Mod;
         internal static string DataPath;
 
@@ -38,6 +38,16 @@ namespace WorldMap
     public sealed class MapRunner : MonoBehaviour
     {
         private void Update() => MapSession.Tick();
-        private void OnGUI() => MapSession.Draw();
+        private void LateUpdate()
+        {
+            if (!MapSession.IsOpen) return;
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+        }
+        private void OnGUI()
+        {
+            MapSession.DrawHud(MapSession.IsHolding);
+            MapSession.Draw();
+        }
     }
 }

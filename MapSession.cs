@@ -8,7 +8,7 @@ using UnityEngine;
 namespace WorldMap
 {
     /// Stores sampled global positions as explored trails. The network carries small deltas, never textures.
-    internal static class MapSession
+    internal static partial class MapSession
     {
         private sealed class Trail { public string Name; public Color Color; public readonly List<Vector3d> Points = new List<Vector3d>(); public readonly HashSet<long> Seen = new HashSet<long>(); }
         private sealed class Landmark { public string Key, Name; public Vector3d Pos; }
@@ -26,20 +26,22 @@ namespace WorldMap
         private static Texture2D _texture;
         private static float _nextTexture;
         private const float SampleDistance = 24f;
-        private const int W = 720, H = 500;
+        private const int W = 960, H = 540;
         private static readonly Color32[] Pixels = new Color32[W * H];
 
         public static void Tick()
         {
-            if (mainscript.s == null || mainscript.s.player == null || !mainscript.s.started) return;
+            if (mainscript.s == null || mainscript.s.player == null || !mainscript.s.started) { Close(); return; }
+            if (mainscript.s.pauseMenuOpen || kaposztaleves.s != null && kaposztaleves.s.isOpen) { Close(); return; }
             var player=mainscript.s.player;
             var heldMap = MapItemRegistration.IsMap(player.inHandP) ? player.inHandP :
                 MapItemRegistration.IsMap(player.pickedUp) ? player.pickedUp : null;
             bool holding = heldMap != null;
             if (holding && heldMap.GetComponent<HeldMapDisplay>() == null)
                 heldMap.gameObject.AddComponent<HeldMapDisplay>();
-            if (!holding) _open=false;
-            else if (Input.GetKeyDown(KeyCode.M)) _open = !_open;
+            if (!holding) Close();
+            else if (Input.GetKeyDown(KeyCode.M)) SetOpen(!_open);
+            else if (!_open) HandControls();
             var pos = mainscript.GlobalFromUnityPos(mainscript.s.player.transform.position);
             EnsureWorld();
             if(Time.unscaledTime>=_nextDiscover){_nextDiscover=Time.unscaledTime+5f;DiscoverLandmarks(pos);}
@@ -87,7 +89,12 @@ namespace WorldMap
             if (!string.IsNullOrEmpty(name)) t.Name = name;
             return t;
         }
-        private static Color PlayerColor(int id) { var c = Color.HSVToRGB(Mathf.Repeat(id * 0.173f + 0.57f, 1f), .75f, 1f); return c; }
+        private static Color PlayerColor(int id)
+        {
+            Color[] ink = { new Color(.32f,.43f,.40f), new Color(.51f,.34f,.29f),
+                new Color(.36f,.40f,.51f), new Color(.42f,.42f,.30f) };
+            return ink[(id & int.MaxValue) % ink.Length];
+        }
 
         public static void ReceivePosition(ModEvent e)
         {
@@ -185,82 +192,5 @@ namespace WorldMap
             catch { _nextSave=Time.unscaledTime+5f; }
         }
 
-        public static void Draw()
-        {
-            if (!_open || mainscript.s == null || mainscript.s.player == null) return;
-            var mapTexture = GetTexture();
-            var rect=new Rect((Screen.width-W)/2,(Screen.height-H)/2,W,H);
-            GUI.Box(new Rect(rect.x-10,rect.y-36,rect.width+20,rect.height+100),"");
-            GUI.Label(new Rect(rect.x,rect.y-32,220,24),"WORLD MAP   •   M to close");
-            if(GUI.Button(new Rect(rect.x+rect.width-162,rect.y-32,32,22),"−"))_range=Mathf.Clamp(_range/1.5f,500,15000);
-            GUI.Label(new Rect(rect.x+rect.width-125,rect.y-32,70,22),(int)(_range*2)+" m");
-            if(GUI.Button(new Rect(rect.x+rect.width-54,rect.y-32,32,22),"+"))_range=Mathf.Clamp(_range*1.5f,500,15000);
-            var me=mainscript.GlobalFromUnityPos(mainscript.s.player.transform.position);
-            var center=new Vector3d(me.x+_panX,me.y,me.z+_panZ);
-            float range=_range, sx=H/(range*2), sz=sx;
-            GUI.DrawTexture(rect,mapTexture,ScaleMode.StretchToFill,false);
-            foreach(var kv in Trails)
-            {
-                Vector3d p=default; bool has=kv.Key==MpApi.MyPlayerId || Positions.TryGetValue(kv.Key,out p);
-                if(!has)continue; if(kv.Key==MpApi.MyPlayerId)p=me;
-                if(Math.Abs(p.x-center.x)>=range || Math.Abs(p.z-center.z)>=range)continue;
-                int px=(int)(W*.5+(p.x-center.x)*sx),py=(int)(H*.5+(p.z-center.z)*sz);
-                GUI.Label(new Rect(rect.x+px+8,rect.y+H-py-10,110,20),kv.Value.Name);
-            }
-            foreach(var place in Landmarks)
-                if(Math.Abs(place.Pos.x-center.x)<range&&Math.Abs(place.Pos.z-center.z)<range){int px=(int)(W*.5+(place.Pos.x-center.x)*sx),py=(int)(H*.5+(place.Pos.z-center.z)*sz);GUI.Label(new Rect(rect.x+px+5,rect.y+H-py-8,150,20),place.Name);}
-            GUI.Label(new Rect(rect.x,rect.y+rect.height+6,340,22),"Orange: visited places  •  Colored routes: explored by players");
-            GUI.Label(new Rect(rect.x+rect.width-150,rect.y+rect.height+6,30,22),"N ↑");
-            if(GUI.Button(new Rect(rect.x+rect.width-112,rect.y+rect.height+4,28,24),"←"))_panX-=_range*.15f;
-            if(GUI.Button(new Rect(rect.x+rect.width-82,rect.y+rect.height+4,28,24),"→"))_panX+=_range*.15f;
-            if(GUI.Button(new Rect(rect.x+rect.width-52,rect.y+rect.height+4,24,24),"↑"))_panZ+=_range*.15f;
-            if(GUI.Button(new Rect(rect.x+rect.width-26,rect.y+rect.height+4,24,24),"↓"))_panZ-=_range*.15f;
-            if(GUI.Button(new Rect(rect.x+rect.width-196,rect.y+rect.height+4,42,24),"Center")){_panX=0;_panZ=0;}
-        }
-
-        // The same image is used by the held item and the larger map window.
-        internal static Texture2D GetTexture()
-        {
-            if (_texture == null) _texture=new Texture2D(W,H,TextureFormat.RGBA32,false) { filterMode=FilterMode.Point };
-            if (Time.unscaledTime < _nextTexture) return _texture;
-            _nextTexture = Time.unscaledTime + .5f;
-            for(int i=0;i<Pixels.Length;i++)Pixels[i]=new Color32(18,22,24,255);
-            for(int y=0;y<H;y+=50)for(int x=0;x<W;x++)Put(x,y,new Color32(37,45,48,255));
-            for(int x=0;x<W;x+=50)for(int y=0;y<H;y++)Put(x,y,new Color32(37,45,48,255));
-            for(int x=0;x<W;x++)Put(x,H/2,new Color32(62,71,72,255));
-            for(int y=0;y<H;y++)Put(W/2,y,new Color32(62,71,72,255));
-            var paper = new Color32(130,150,145,255);
-            for(int x=4;x<W-4;x++) { Put(x,4,paper); Put(x,H-5,paper); }
-            for(int y=4;y<H-4;y++) { Put(4,y,paper); Put(W-5,y,paper); }
-            Line(W-38,H-27,W-38,H-61,paper);
-            Line(W-38,H-61,W-46,H-48,paper);
-            Line(W-38,H-61,W-30,H-48,paper);
-            if (mainscript.s == null || mainscript.s.player == null) return _texture;
-            var me=mainscript.GlobalFromUnityPos(mainscript.s.player.transform.position);
-            var center=new Vector3d(me.x+_panX,me.y,me.z+_panZ);
-            float range=_range, sx=H/(range*2), sz=sx;
-            foreach(var kv in Trails)
-            {
-                var t=kv.Value; var c=(Color32)t.Color;
-                for(int i=1;i<t.Points.Count;i++)
-                {
-                    var a=t.Points[i-1]; var b=t.Points[i];
-                    if(Math.Abs(a.x-center.x)>range*1.5 || Math.Abs(a.z-center.z)>range*1.5)continue;
-                    Line((int)(W*.5+(a.x-center.x)*sx),(int)(H*.5+(a.z-center.z)*sz),(int)(W*.5+(b.x-center.x)*sx),(int)(H*.5+(b.z-center.z)*sz),c);
-                }
-                Vector3d livePos=default;
-                bool hasPosition=kv.Key==MpApi.MyPlayerId || Positions.TryGetValue(kv.Key,out livePos);
-                if(hasPosition) { if(kv.Key==MpApi.MyPlayerId)livePos=me; if(Math.Abs(livePos.x-center.x)<range && Math.Abs(livePos.z-center.z)<range){int px=(int)(W*.5+(livePos.x-center.x)*sx),py=(int)(H*.5+(livePos.z-center.z)*sz);Dot(px,py,kv.Key==MpApi.MyPlayerId?new Color32(255,245,100,255):c,6);} }
-            }
-            foreach(var place in Landmarks)
-                if(Math.Abs(place.Pos.x-center.x)<range&&Math.Abs(place.Pos.z-center.z)<range)Dot((int)(W*.5+(place.Pos.x-center.x)*sx),(int)(H*.5+(place.Pos.z-center.z)*sz),new Color32(255,150,80,255),4);
-            if (Math.Abs(me.x-center.x)<range && Math.Abs(me.z-center.z)<range)
-                Dot((int)(W*.5+(me.x-center.x)*sx),(int)(H*.5+(me.z-center.z)*sz),new Color32(255,245,100,255),6);
-            _texture.SetPixels32(Pixels); _texture.Apply(false);
-            return _texture;
-        }
-        private static void Dot(int x,int y,Color32 c,int d=1) { for(int oy=-d;oy<=d;oy++)for(int ox=-d;ox<=d;ox++)if(ox*ox+oy*oy<=d*d)Put(x+ox,y+oy,c); }
-        private static void Put(int x,int y,Color32 c){if(x>=0&&x<W&&y>=0&&y<H)Pixels[y*W+x]=c;}
-        private static void Line(int x0,int y0,int x1,int y1,Color32 c) { int dx=Math.Abs(x1-x0),sx=x0<x1?1:-1,dy=-Math.Abs(y1-y0),sy=y0<y1?1:-1,err=dx+dy; for(int n=0;n<6000;n++){Dot(x0,y0,c,2);if(x0==x1&&y0==y1)break;int e=2*err;if(e>=dy){err+=dy;x0+=sx;}if(e<=dx){err+=dx;y0+=sy;}} }
     }
 }
