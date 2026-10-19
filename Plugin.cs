@@ -11,7 +11,7 @@ namespace WorldMap
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "tldrevamp.worldmap";
-        public const string Version = "0.1.1";
+        public const string Version = "0.1.2";
         internal static ModInfo Mod;
         internal static string DataPath;
 

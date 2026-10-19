@@ -9,7 +9,7 @@ namespace WorldMap
     [HarmonyPatch(typeof(itemdatabase), "Awake")]
     internal static class MapItemRegistration
     {
-        private const int ItemId = 9100, LootCategoryId = 91;
+        private const int ItemId = 9400, LootCategoryId = 91;
         private static GameObject _holder;
 
         private static void Postfix(itemdatabase __instance)
@@ -18,6 +18,11 @@ namespace WorldMap
             {
                 var source = __instance.items != null && __instance.items.Length > (int)itemdatabase.i.book ? __instance.items[(int)itemdatabase.i.book] : null;
                 if (source == null) { BepInEx.Logging.Logger.CreateLogSource("WorldMap").LogWarning("Map item not registered: book item prefab missing"); return; }
+                if (__instance.items.Length > ItemId && __instance.items[ItemId] != null)
+                {
+                    BepInEx.Logging.Logger.CreateLogSource("WorldMap").LogError("Map item ID " + ItemId + " is already in use");
+                    return;
+                }
                 if (__instance.items.Length <= ItemId) Array.Resize(ref __instance.items, ItemId + 1);
                 if (_holder == null) { _holder = new GameObject("WorldMapItemPrefab"); _holder.SetActive(false); UnityEngine.Object.DontDestroyOnLoad(_holder); }
                 var prefab = UnityEngine.Object.Instantiate(source, _holder.transform);
