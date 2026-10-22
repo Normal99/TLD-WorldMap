@@ -37,10 +37,48 @@ namespace WorldMap
             }
         }
 
+        internal static void SetOpenForTest(bool open) => SetOpen(open);
+        internal static void SaveForTest() => Save();
+        internal static string TrailList()
+        {
+            var rows = new List<string>();
+            foreach (var kv in Trails) rows.Add(kv.Key + "=" + kv.Value.Points.Count);
+            foreach (var kv in Positions) rows.Add("marker " + PlayerName(kv.Key));
+            return string.Join("; ", rows);
+        }
+        internal static void ZoomForTest(float factor) => Zoom(factor);
+        internal static void PanForTest(double dx, double dz) { _panX += dx; _panZ += dz; Invalidate(); }
+
+        /// For Probe: the map's state and how much ink its picture has.
+        internal static string Describe()
+        {
+            int ink = 0;
+            if (_texture != null) for (int i = 0; i < Pixels.Length; i += 7) if (!Pixels[i].Equals(PaperPixels[i])) ink++;
+            int mine = Trails.TryGetValue(SelfKey, out var t) ? t.Points.Count : 0;
+            return "world " + _worldKey + " trails " + Trails.Count + " my points " + mine + " landmarks " + Landmarks.Count +
+                " positions " + Positions.Count + " range " + _range + " pan " + _panX.ToString("0") + "," + _panZ.ToString("0") + " ink " + ink;
+        }
+
         internal static void Close()
         {
             if (_open) SetOpen(false);
         }
+
+        internal static void Toggle() => SetOpen(!_open);
+
+        /// A menu or the inventory over the game: no map controls drawn over it.
+        private static bool MenuOpen
+        {
+            get
+            {
+                try { return mainscript.s == null || mainscript.s.pauseMenuOpen || mainscript.s.SomeMenuOpen() || kaposztaleves.s != null && kaposztaleves.s.isOpen; }
+                catch { return false; }
+            }
+        }
+
+        /// The picture again soon, but at most 20 times a second: every mouse-drag event rebuilt the whole 960×540
+        /// picture, several times a frame while dragging.
+        private static void Invalidate() => _nextTexture = Mathf.Min(_nextTexture, _lastTexture + .05f);
 
         private static void HandControls()
         {
@@ -50,16 +88,16 @@ namespace WorldMap
             if (Input.GetKeyDown(KeyCode.RightArrow)) { _panX += step; moved = true; }
             if (Input.GetKeyDown(KeyCode.UpArrow)) { _panZ += step; moved = true; }
             if (Input.GetKeyDown(KeyCode.DownArrow)) { _panZ -= step; moved = true; }
-            if (Input.GetKeyDown(KeyCode.PageUp)) { Zoom(1f / 1.5f); moved = true; }
-            if (Input.GetKeyDown(KeyCode.PageDown)) { Zoom(1.5f); moved = true; }
-            if (Input.GetKeyDown(KeyCode.Home)) { _panX = _panZ = 0; moved = true; }
-            if (moved) _nextTexture = 0;
+            if (Input.GetKeyDown(Plugin.ZoomIn.Value) || Input.GetKeyDown(KeyCode.KeypadPlus)) { Zoom(1f / 1.5f); moved = true; }
+            if (Input.GetKeyDown(Plugin.ZoomOut.Value) || Input.GetKeyDown(KeyCode.KeypadMinus)) { Zoom(1.5f); moved = true; }
+            if (Input.GetKeyDown(Plugin.Center.Value)) { _panX = _panZ = 0; moved = true; }
+            if (moved) Invalidate();
         }
 
         private static void Zoom(float factor)
         {
             _range = Mathf.Clamp(_range * factor, 350f, 20000f);
-            _nextTexture = 0;
+            Invalidate();
         }
 
         private static Texture2D Solid(Color32 color)
@@ -96,22 +134,39 @@ namespace WorldMap
 
         internal static void DrawHud(bool holding)
         {
-            if (!holding || _open) return;
+            if (!holding || _open || MenuOpen) return;
             EnsureStyle();
             int oldDepth = GUI.depth;
             GUI.depth = -100;
-            float width = Mathf.Min(670f, Screen.width - 24f);
-            float x = (Screen.width - width) * .5f, y = Screen.height - 63f;
-            GUI.DrawTexture(new Rect(x, y, width, 48), _frame);
-            GUI.Label(new Rect(x + 13, y + 3, 145, 22), "FIELD MAP", _titleStyle);
-            GUI.Label(new Rect(x + 158, y + 3, width - 168, 22), "M  FULL VIEW   ·   ARROWS  PAN", _hudStyle);
-            GUI.Label(new Rect(x + 158, y + 23, width - 168, 19), "PGUP / PGDN  ZOOM   ·   HOME  CENTER", _hudStyle);
+            float width = Mathf.Min(330f, Screen.width - 32f);
+            // top right: the game's own key hints are on the left and bottom, RevaMP's overlay top left
+            float x = Screen.width - width - 16f, y = 16f;
+            bool seated = mainscript.s.player.Bsitting;
+            GUI.DrawTexture(new Rect(x, y, width, seated ? 50 : 68), _frame);
+            GUI.Label(new Rect(x + 12, y + 2, width - 24, 24), "MAP CONTROLS", _titleStyle);
+            GUI.Label(new Rect(x + 12, y + 27, width - 24, 18), MapKeyName() + "  FULL VIEW" + (seated ? "" : "   ·   ARROWS  PAN"), _hudStyle);
+            if (!seated)
+                GUI.Label(new Rect(x + 12, y + 45, width - 24, 18), KeyName(Plugin.ZoomIn.Value) + " / " + KeyName(Plugin.ZoomOut.Value) + "  ZOOM   ·   " + KeyName(Plugin.Center.Value) + "  CENTER", _hudStyle);
             GUI.depth = oldDepth;
+        }
+
+        private static string KeyName(KeyCode k) => k == KeyCode.Equals ? "=" : k == KeyCode.Minus ? "-" : k.ToString().ToUpperInvariant();
+
+        /// The game's own map key, as the player has it bound.
+        private static string MapKeyName()
+        {
+            try
+            {
+                var keys = settingsscript.s.S.inputs[(int)inputscript.IN.map].keys;
+                if (keys != null && keys.Length > 0 && keys[0] != null && keys[0].key != KeyCode.None) return KeyName(keys[0].key);
+            }
+            catch { }
+            return "M";
         }
 
         public static void Draw()
         {
-            if (!_open || mainscript.s == null || mainscript.s.player == null) return;
+            if (!_open || mainscript.s == null || mainscript.s.player == null || mainscript.s.pauseMenuOpen) return;
             EnsureStyle();
             int oldDepth = GUI.depth;
             GUI.depth = -100;
@@ -122,7 +177,7 @@ namespace WorldMap
             GUI.DrawTexture(new Rect(outer.x - 3, outer.y - 3, w + 6, h + 6), _frame);
             GUI.DrawTexture(outer, _paper);
             GUI.DrawTexture(new Rect(outer.x, outer.y, w, header), _frame);
-            GUI.Label(new Rect(outer.x + 17, outer.y + 2, 250, header - 4), "FIELD MAP", _titleStyle);
+            GUI.Label(new Rect(outer.x + 17, outer.y + 2, 250, header - 4), "WORLD MAP", _titleStyle);
             GUI.Label(new Rect(outer.x + w - 235, outer.y + 3, 220, header - 6), "THE LONG DRIVE   /   N ↑", _hudStyle);
 
             var slot = new Rect(outer.x + 14, outer.y + header + 10, w - 28, h - header - footer - 20);
@@ -138,9 +193,9 @@ namespace WorldMap
             float fy = outer.y + h - footer;
             GUI.DrawTexture(new Rect(outer.x, fy, w, 1), _ink);
             GUI.Label(new Rect(outer.x + 15, fy + 5, w - 25, 21),
-                "DRAG TO PAN   ·   WHEEL TO ZOOM   ·   M OR ESC TO CLOSE", _smallStyle);
+                "DRAG TO PAN   ·   WHEEL TO ZOOM   ·   " + MapKeyName() + " OR ESC TO CLOSE", _smallStyle);
             float bx = outer.x + w - 282, by = fy + footer - 32;
-            if (GUI.Button(new Rect(bx, by, 68, 26), "CENTER", _buttonStyle)) { _panX = _panZ = 0; _nextTexture = 0; }
+            if (GUI.Button(new Rect(bx, by, 68, 26), "CENTER", _buttonStyle)) { _panX = _panZ = 0; Invalidate(); }
             if (GUI.Button(new Rect(bx + 74, by, 29, 26), "−", _buttonStyle)) Zoom(1.5f);
             GUI.Label(new Rect(bx + 106, by, 75, 26), (_range * 2 / 1000f).ToString("0.#") + " km", _bodyStyle);
             if (GUI.Button(new Rect(bx + 183, by, 29, 26), "+", _buttonStyle)) Zoom(1f / 1.5f);
@@ -168,7 +223,7 @@ namespace WorldMap
                 double metresPerPixel = 2.0 * _range / map.height;
                 _panX -= e.delta.x * metresPerPixel;
                 _panZ += e.delta.y * metresPerPixel;
-                _nextTexture = 0;
+                Invalidate();
                 e.Use();
             }
             else if (e.type == EventType.MouseUp && e.button == 0 && _dragging)
@@ -185,11 +240,7 @@ namespace WorldMap
             float scale = H / (_range * 2f);
             var occupied = new List<Vector2>();
             DrawLabel("You", me, center, map, scale, occupied);
-            foreach (var kv in Trails)
-            {
-                if (kv.Key == MpApi.MyPlayerId || !Positions.TryGetValue(kv.Key, out var p)) continue;
-                DrawLabel(kv.Value.Name, p, center, map, scale, occupied);
-            }
+            foreach (var kv in Positions) DrawLabel(PlayerName(kv.Key), kv.Value, center, map, scale, occupied);
             foreach (var place in Landmarks) DrawLabel(place.Name, place.Pos, center, map, scale, occupied);
         }
 
@@ -210,7 +261,7 @@ namespace WorldMap
         {
             if (_texture == null) _texture = new Texture2D(W, H, TextureFormat.RGBA32, false) { filterMode = FilterMode.Bilinear };
             if (Time.unscaledTime < _nextTexture) return _texture;
-            _nextTexture = Time.unscaledTime + .3f;
+            _nextTexture = Time.unscaledTime + .3f; _lastTexture = Time.unscaledTime;
             PreparePaper();
             Array.Copy(PaperPixels, Pixels, Pixels.Length);
             if (mainscript.s == null || mainscript.s.player == null) return _texture;
@@ -220,21 +271,23 @@ namespace WorldMap
             foreach (var kv in Trails)
             {
                 var t = kv.Value;
-                var color = kv.Key == MpApi.MyPlayerId ? RouteInk : (Color32)t.Color;
+                var color = kv.Key == SelfKey ? RouteInk : (Color32)t.Color;
                 for (int i = 1; i < t.Points.Count; i++)
                 {
                     var a = t.Points[i - 1]; var b = t.Points[i];
-                    if (Flat(a, b) > 1200f || Math.Abs(a.x - center.x) > _range * 2 || Math.Abs(a.z - center.z) > _range * 2) continue;
+                    if (Flat(a, b) > BreakDistance || Math.Abs(a.x - center.x) > _range * 2 || Math.Abs(a.z - center.z) > _range * 2) continue;
                     Line((int)(W * .5 + (a.x - center.x) * scale), (int)(H * .5 + (a.z - center.z) * scale),
                          (int)(W * .5 + (b.x - center.x) * scale), (int)(H * .5 + (b.z - center.z) * scale), color, 2);
                 }
-                Vector3d p = default;
-                if (kv.Key == MpApi.MyPlayerId) p = me;
-                else if (!Positions.TryGetValue(kv.Key, out p)) continue;
-                Marker(p, center, scale, kv.Key == MpApi.MyPlayerId ? SelfInk : color, 6);
+            }
+            foreach (var kv in Positions)
+            {
+                var color = Trails.TryGetValue(KeyOf(PlayerName(kv.Key)), out var t) ? (Color32)t.Color : (Color32)PlayerColor(KeyOf(PlayerName(kv.Key)));
+                Marker(kv.Value, center, scale, color, 6);
             }
             foreach (var place in Landmarks) Marker(place.Pos, center, scale, PlaceInk, 4);
             Marker(me, center, scale, SelfInk, 6);
+            PrintScale();
             _texture.SetPixels32(Pixels);
             _texture.Apply(false);
             return _texture;
@@ -249,7 +302,8 @@ namespace WorldMap
             {
                 int grain = (((x / 3) * 73856093) ^ ((y / 3) * 19349663)) & 7;
                 int edge = Math.Min(Math.Min(x, W - 1 - x), Math.Min(y, H - 1 - y));
-                int shade = edge < 17 ? (17 - edge) / 3 : 0;
+                int crease = Math.Min(Math.Abs(x - W / 3), Math.Min(Math.Abs(x - W * 2 / 3), Math.Abs(y - H / 2)));
+                int shade = (edge < 17 ? (17 - edge) / 3 : 0) + (crease < 3 ? 10 - crease * 3 : 0);
                 PaperPixels[y * W + x] = new Color32((byte)(224 + grain - shade),
                     (byte)(210 + grain - shade), (byte)(174 + grain - shade), 255);
             }
@@ -259,11 +313,15 @@ namespace WorldMap
             var border = new Color32(125, 114, 87, 255);
             for (int x = 8; x < W - 8; x++) { PaperPixels[8 * W + x] = border; PaperPixels[(H - 9) * W + x] = border; }
             for (int y = 8; y < H - 8; y++) { PaperPixels[y * W + 8] = border; PaperPixels[y * W + W - 9] = border; }
-            for (int y = H - 86; y < H - 26; y++) PaperPixels[y * W + W - 61] = border;
-            for (int i = 0; i < 14; i++)
+            var ink = new Color32(98, 89, 66, 255);
+            PrintText(PaperPixels, "FIELD MAP", 32, H - 56, 3, ink);
+            PrintText(PaperPixels, "EXPLORED ROUTES", 34, H - 73, 1, ink);
+            PrintText(PaperPixels, "N", W - 66, H - 35, 2, ink);
+            for (int y = H - 92; y < H - 45; y++) PaperPixels[y * W + W - 61] = ink;
+            for (int i = 0; i < 13; i++)
             {
-                PaperPixels[(H - 86 + i) * W + W - 61 - i] = border;
-                PaperPixels[(H - 86 + i) * W + W - 61 + i] = border;
+                PaperPixels[(H - 45 - i) * W + W - 61 - i] = ink;
+                PaperPixels[(H - 45 - i) * W + W - 61 + i] = ink;
             }
         }
 

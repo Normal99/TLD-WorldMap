@@ -10,7 +10,9 @@ namespace WorldMap
     internal static class MapItemRegistration
     {
         private const int ItemId = 9400, LootCategoryId = 91;
-        private static GameObject _holder;
+        private static GameObject _holder, _prefab;
+        /// The map item as the database has it (to place one in a new game's start house).
+        internal static GameObject Prefab => _prefab;
 
         private static void Postfix(itemdatabase __instance)
         {
@@ -18,13 +20,21 @@ namespace WorldMap
             {
                 var source = __instance.items != null && __instance.items.Length > (int)itemdatabase.i.book ? __instance.items[(int)itemdatabase.i.book] : null;
                 if (source == null) { BepInEx.Logging.Logger.CreateLogSource("WorldMap").LogWarning("Map item not registered: book item prefab missing"); return; }
-                if (__instance.items.Length > ItemId && __instance.items[ItemId] != null)
+                if (__instance.items.Length > ItemId && __instance.items[ItemId] != null && __instance.items[ItemId] != _prefab)
                 {
                     BepInEx.Logging.Logger.CreateLogSource("WorldMap").LogError("Map item ID " + ItemId + " is already in use");
                     return;
                 }
                 if (__instance.items.Length <= ItemId) Array.Resize(ref __instance.items, ItemId + 1);
                 if (_holder == null) { _holder = new GameObject("WorldMapItemPrefab"); _holder.SetActive(false); UnityEngine.Object.DontDestroyOnLoad(_holder); }
+                if (__instance.categories.Length > LootCategoryId && __instance.categories[LootCategoryId] != null && _prefab == null)
+                {
+                    BepInEx.Logging.Logger.CreateLogSource("WorldMap").LogError("Loot category " + LootCategoryId + " is already in use: map not registered");
+                    return;
+                }
+                // The database is a scene object: it fills its items again on every scene load (new game, load, menu).
+                // The map is built once and only put back after that (a new clone every time piled up in the holder).
+                if (_prefab != null) { __instance.items[ItemId] = _prefab; AddCategories(__instance); return; }
                 var prefab = UnityEngine.Object.Instantiate(source, _holder.transform);
                 prefab.name = "paper_worldmap";
                 var save = prefab.GetComponent<tosaveitemscript>();
@@ -38,15 +48,22 @@ namespace WorldMap
                     pickup.canInventory = true;
                     pickup.canHoldRightHand = true;
                 }
+                prefab.AddComponent<HeldMapDisplay>();
+                _prefab = prefab;
                 __instance.items[ItemId] = prefab;
-
-                // Misc household tables are used by the game's house loot points. Keep it rare.
-                if (__instance.categories.Length <= LootCategoryId) Array.Resize(ref __instance.categories, LootCategoryId + 1);
-                __instance.categories[LootCategoryId] = new itemdatabase.category(new[] { ItemId }, false, new[] { 1 });
-                AddToCategory(__instance, 34);
-                AddToCategory(__instance, 35);
+                AddCategories(__instance);
             }
             catch (Exception e) { BepInEx.Logging.Logger.CreateLogSource("WorldMap").LogError("Could not register map item: " + e); }
+        }
+
+        /// Misc household tables are used by the game's house loot points. Keep it rare (every new game also gets one
+        /// in its start house: StartHouseMap).
+        private static void AddCategories(itemdatabase db)
+        {
+            if (db.categories.Length <= LootCategoryId) Array.Resize(ref db.categories, LootCategoryId + 1);
+            db.categories[LootCategoryId] = new itemdatabase.category(new[] { ItemId }, false, new[] { 1 });
+            AddToCategory(db, 34);
+            AddToCategory(db, 35);
         }
 
         internal static bool IsMap(pickupable item)
@@ -63,6 +80,26 @@ namespace WorldMap
             var weights = new List<int>();
             for (int i = 0; i < c.categories.Length; i++) weights.Add(c.categorychances != null && i < c.categorychances.Length ? c.categorychances[i] : 100);
             weights.Add(1); c.categories = cats.ToArray(); c.categorychances = weights.ToArray();
+        }
+    }
+
+    /// A new game (alone, or the host's): the player starts in the start house, and a World Map is put there with
+    /// them, as the mod promises. Joiners get the host's (the session shares it); a loaded save gets none.
+    [HarmonyPatch(typeof(poiGenScript), nameof(poiGenScript.StartHouseStart))]
+    internal static class StartHouseMap
+    {
+        private static void Prefix(poiGenScript __instance, out bool __state) => __state = __instance.startHouseStarted;
+
+        private static void Postfix(poiGenScript __instance, bool __state)
+        {
+            try
+            {
+                if (__state || !__instance.placeStartHouse || DataFromMenuScript.s == null || !DataFromMenuScript.s.newgame || !syncScript.IsHostOrSingle()) return;
+                var player = mainscript.s != null ? mainscript.s.player : null;
+                if (player == null) return;
+                MapSession.StartHousePlaced(player.transform.position, player.transform.rotation);
+            }
+            catch (Exception e) { BepInEx.Logging.Logger.CreateLogSource("WorldMap").LogWarning("Start house map: " + e.Message); }
         }
     }
 }

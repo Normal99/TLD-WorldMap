@@ -3,15 +3,17 @@
 An in-game map item that opens a north-up global-coordinate map with **M** while held or equipped. It draws shared
 exploration trails, live multiplayer player markers, and ochre markers for nearby places the player has visited.
 Zoom and pan controls let players browse beyond the default 6 km view. Route and landmark data is saved by map seed
-in `BepInEx/config/WorldMap/`; the multiplayer API sends compact coordinate updates and throttled late-join snapshots.
+in `BepInEx/config/WorldMap/` (a new game on a seed played before sets the old file aside as `seed-<n>-before-<time>.txt`); the multiplayer API sends compact coordinate updates and throttled late-join snapshots.
 Rendered map images stay local.
 
 The saved item is cloned from the game's book item and added at low weight to the household miscellaneous loot
-categories. It is searchable as `paper_worldmap` in the game's spawn/debug lists. Its held page displays the live map.
+categories; a new game (alone, or the host's) also puts one in the start house with the player. It is searchable as
+`paper_worldmap` in the game's spawn/debug lists. Its held page displays the live map.
 Hold or equip it to see the map on the paper in your hand. The in-game HUD lists its controls: **arrows** pan,
-**Page Up / Page Down** zoom, **Home** centers, and **M** opens the larger view. In the larger view, drag with the mouse
-to pan, use the mouse wheel or buttons to zoom, and press **M** or **Escape** to close it. The item uses standard
-inventory and hand placement, with right-hand equip enabled.
+**=** / **-** (or the keypad's + and -) zoom, **Home** centers, and the game's map key (**M** by default) opens the
+larger view. In the larger view, drag with the mouse to pan, use the mouse wheel or buttons to zoom, and press **M** or
+**Escape** to close it. The zoom and center keys can be changed in `BepInEx/config/tldrevamp.worldmap.cfg` (Keys).
+The item uses standard inventory and hand placement, with right-hand equip enabled.
 
 Exploration is represented by sampled travel trails rather than surveyed terrain. Positions are sent at one metre
 resolution; live markers update once a second, and route samples are sent every 24 metres. The host queues late-join
