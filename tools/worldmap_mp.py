@@ -45,7 +45,7 @@ def install():
     second = tldenv.need_second()
     r = subprocess.run(["rsync", "-a", "-s", "--mkpath", "-e", " ".join(ssh_base()[:-1]), str(dll), f"{second}:{rgame}/BepInEx/plugins/WorldMap/"], capture_output=True, text=True)
     if r.returncode != 0: sys.exit("copying World Map to the laptop failed: " + r.stderr)
-    subprocess.run(ssh_base() + [f'rm -f "{tldenv.REMOTE_GAME}"/BepInEx/config/WorldMap/seed-*.txt'], capture_output=True)
+    subprocess.run(ssh_base()[:-1] + [second, f'rm -f "{tldenv.REMOTE_GAME}"/BepInEx/config/WorldMap/seed-*.txt'], capture_output=True)
 
 def walk(side, n, dx, dz, pause=1.3):
     p = side("gpos")
