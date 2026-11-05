@@ -11,7 +11,7 @@ namespace WorldMap
     public sealed class Plugin : BaseUnityPlugin
     {
         public const string Guid = "tldrevamp.worldmap";
-        public const string Version = "0.2.0";
+        public const string Version = "0.2.1";
         internal static ModInfo Mod;
         internal static string DataPath;
         /// Hand keys (standing with the map out). Not Page Up / Page Down: TLD RevaMP's overlay and debug report
