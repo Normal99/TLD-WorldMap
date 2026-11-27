@@ -83,8 +83,14 @@ with game.ProtectedSession():
     shot(b, "wm-open")
     print(" zoom:", probe(b, "Zoom 0.3")); time.sleep(1); shot(b, "wm-open-zoom")
     probe(b, "Zoom 3.33")
+    # the wheel zooms the view; the player reads the same wheel for crouching (a player crouched at every zoom)
+    duck = lambda: float(b("get mainscript.s.player.duckValue")["value"])
+    d0 = duck(); b("mp fakeinput 0 0 0 0 1 2"); time.sleep(2.5); d1 = duck()
+    verdict("the wheel in the M view doesn't crouch the player", abs(d1 - d0) < 0.01, f"duckValue {d0:.2f} -> {d1:.2f}")
     s = probe(b, "Close"); time.sleep(1.5); s = probe(b)
     verdict("M view closes, cursor locked again", "open False" in s and "crsrLocked True" in s, s[:160])
+    d0 = duck(); b("mp fakeinput 0 0 0 0 -1 2"); time.sleep(2.5); d1 = duck(); b("mp fakeinput 0 0 0 0 1 2"); time.sleep(2.5)
+    verdict("with the view closed the wheel still crouches (the check above can fail)", abs(d1 - d0) >= 0.01, f"duckValue {d0:.2f} -> {d1:.2f}")
 
     # walk 400 m in 25 m steps: the route grows, the map gets ink
     s = probe(b); before = num(s, "my points") or 0; ink0 = num(s, "ink") or 0

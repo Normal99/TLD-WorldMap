@@ -29,6 +29,9 @@ namespace WorldMap
                 MapSession.Toggle();
             }
             if (MapSession.IsOpen && mainscript.s != null) mainscript.s.crsrLocked = false;
+            // the larger view zooms with the mouse wheel; the player reads the same wheel (inputscript.scroll, only here)
+            // for crouching, so with the view open it gets none: the player crouched at every zoom (player report)
+            if (MapSession.IsOpen && input != null && __instance == mainscript.s?.player) input.scroll = 0f;
         }
     }
 
